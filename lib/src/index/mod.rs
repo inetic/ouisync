@@ -42,6 +42,7 @@ pub(crate) type SnapshotId = u32;
 
 #[derive(Clone)]
 pub(crate) struct Index {
+    pub id: String,
     pub pool: db::Pool,
     repository_id: RepositoryId,
     notify_tx: broadcast::Sender<Event>,
@@ -54,6 +55,7 @@ impl Index {
         notify_tx: broadcast::Sender<Event>,
     ) -> Self {
         Self {
+            id: format!("{:x}", rand::random::<u32>()),
             pool,
             repository_id,
             notify_tx,
@@ -137,6 +139,7 @@ impl Index {
         if uptodate {
             let hash = proof.hash;
 
+            println!("receive_root_node {:?}", proof);
             match RootNode::create(&mut tx, proof, Summary::INCOMPLETE).await {
                 Ok(node) => {
                     tracing::debug!(vv = ?node.proof.version_vector, "snapshot started");

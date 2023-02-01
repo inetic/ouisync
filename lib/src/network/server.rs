@@ -70,6 +70,7 @@ impl<'a> Responder<'a> {
 
     #[instrument(skip(self), err(Debug))]
     async fn handle_root_node(&mut self, branch_id: PublicKey) -> Result<()> {
+        println!("server.handle_root_node");
         let mut conn = self.index.pool.acquire().await?;
         let root_node = RootNode::load_latest_complete_by_writer(&mut conn, branch_id).await;
 
@@ -99,6 +100,7 @@ impl<'a> Responder<'a> {
 
     #[instrument(skip(self), err(Debug))]
     async fn handle_child_nodes(&mut self, parent_hash: Hash) -> Result<()> {
+        println!("server.handle_child_nodes");
         let mut conn = self.index.pool.acquire().await?;
 
         // At most one of these will be non-empty.
@@ -127,6 +129,7 @@ impl<'a> Responder<'a> {
 
     #[instrument(skip(self), err(Debug))]
     async fn handle_block(&mut self, id: BlockId) -> Result<()> {
+        println!("server.handle_block");
         let mut content = vec![0; BLOCK_SIZE].into_boxed_slice();
         let mut conn = self.index.pool.acquire().await?;
         let result = block::read(&mut conn, &id, &mut content).await;

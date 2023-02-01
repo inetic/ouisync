@@ -175,6 +175,7 @@ impl Client {
         summary: Summary,
     ) -> Result<(), ReceiveError> {
         let hash = proof.hash;
+        println!("network/client.rs/handle_root_node");
         let updated = self.store.index.receive_root_node(proof, summary).await?;
 
         if updated {

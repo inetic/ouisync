@@ -63,19 +63,27 @@ async fn transfer_snapshot_between_two_replicas_case(
     changeset_size: usize,
     rng_seed: u64,
 ) {
+    println!(
+        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! BEGIN {} {} {} {}",
+        leaf_count, changeset_count, changeset_size, rng_seed
+    );
     assert!(changeset_size > 0);
 
     let mut rng = StdRng::seed_from_u64(rng_seed);
 
     let write_keys = Keypair::generate(&mut rng);
     let (_a_base_dir, a_store, a_id) = create_store(&mut rng, &write_keys).await;
-    let (_b_base_dir, b_store, _) = create_store(&mut rng, &write_keys).await;
+    let (_b_base_dir, b_store, b_id) = create_store(&mut rng, &write_keys).await;
 
     let snapshot = Snapshot::generate(&mut rng, leaf_count);
     save_snapshot(&a_store.index, a_id, &write_keys, &snapshot).await;
     receive_blocks(&a_store, &snapshot).await;
 
-    assert!(load_latest_root_node(&b_store.index, a_id).await.is_none());
+    let mut i = 0;
+
+    assert!(load_latest_root_node_("0", i, &b_id, &b_store.index, a_id)
+        .await
+        .is_none());
 
     let mut server = create_server(a_store.index.clone());
     let mut client = create_client(b_store.clone());
@@ -86,7 +94,9 @@ async fn transfer_snapshot_between_two_replicas_case(
         let mut remaining_changesets = changeset_count;
 
         loop {
-            wait_until_snapshots_in_sync(&a_store.index, a_id, &b_store.index).await;
+            i += 1;
+
+            wait_until_snapshots_in_sync_(i, &a_store.index, a_id, &b_store.index, &b_id).await;
 
             if remaining_changesets > 0 {
                 create_changeset(&mut rng, &a_store.index, &a_id, &write_keys, changeset_size)
@@ -103,6 +113,11 @@ async fn transfer_snapshot_between_two_replicas_case(
     // HACK: prevent "too many open files" error.
     a_store.db().close().await.unwrap();
     b_store.db().close().await.unwrap();
+
+    println!(
+        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! END {} {} {} {}",
+        leaf_count, changeset_count, changeset_size, rng_seed
+    );
 }
 
 // NOTE: Reducing the number of cases otherwise this test is too slow.
@@ -419,10 +434,40 @@ async fn wait_until_snapshots_in_sync(
         return;
     }
 
+    println!(">>>>>>>>>>>>>>>>>>> server root on start {:?}", server_root);
+
     loop {
         if let Some(client_root) = load_latest_root_node(client_index, server_id).await {
             if client_root.summary.is_complete() && client_root.proof.hash == server_root.proof.hash
             {
+                //let client_vv = &client_root.proof.version_vector;
+                //let server_vv = &server_root.proof.version_vector;
+
+                //use std::cmp::Ordering;
+
+                //match client_vv.partial_cmp(server_vv) {
+                //    Some(Ordering::Equal) => break,
+                //    Some(Ordering::Greater) => {
+                //        //assert_ne!(client_root.proof.hash, server_root.proof.hash);
+                //        server_root = load_latest_root_node(server_index, server_id)
+                //            .await
+                //            .unwrap();
+                //        continue;
+                //    }
+                //    _ => unreachable!(),
+                //}
+
+                //if client_vv != server_vv {
+                //    let server_root_ = load_latest_root_node(server_index, server_id).await;
+                //    println!(
+                //        ">>>>>>>>>> server root now {:?}",
+                //        server_root_
+                //            .as_ref()
+                //            .map(|root| root.proof.version_vector.clone())
+                //    );
+                //    assert_eq!(client_vv, server_vv);
+                //}
+
                 // client has now fully downloaded server's latest snapshot.
                 assert_eq!(
                     client_root.proof.version_vector,
@@ -433,6 +478,91 @@ async fn wait_until_snapshots_in_sync(
         }
 
         recv_any(&mut rx).await
+    }
+}
+
+async fn wait_until_snapshots_in_sync_(
+    i: u32,
+    server_index: &Index,
+    server_id: PublicKey,
+    client_index: &Index,
+    client_id: &PublicKey,
+) {
+    let mut rx = client_index.subscribe();
+
+    let server_root = load_latest_root_node_("a", i, &server_id, server_index, server_id).await;
+    let mut server_root = server_root.unwrap();
+    //let mut server_root = if let Some(server_root) = server_root {
+    //    server_root
+    //} else {
+    //    return;
+    //};
+
+    assert!(!server_root.proof.version_vector.is_empty());
+    //if server_root.proof.version_vector.is_empty() {
+    //    return;
+    //}
+
+    println!(
+        ">>>>>>>>>>>>>>>>>>> server root on start index.id:{:?} {:?}",
+        server_index.id, server_root
+    );
+
+    let mut do_fail = false;
+
+    loop {
+        if let Some(client_root) =
+            load_latest_root_node_("b", i, client_id, client_index, server_id).await
+        {
+            if client_root.summary.is_complete() && client_root.proof.hash == server_root.proof.hash
+            {
+                let client_vv = &client_root.proof.version_vector;
+                let server_vv = &server_root.proof.version_vector;
+
+                use std::cmp::Ordering;
+
+                match client_vv.partial_cmp(server_vv) {
+                    Some(Ordering::Equal) => break,
+                    Some(Ordering::Greater) => {
+                        println!(">>>>>>>>>>>>>>>> client:{:?}", client_root.proof);
+                        println!(">>>>>>>>>>>>>>>> server:{:?} (OLD)", server_root.proof);
+                        //assert_ne!(client_root.proof.hash, server_root.proof.hash);
+                        server_root =
+                            load_latest_root_node_("c", i, &server_id, server_index, server_id)
+                                .await
+                                .unwrap();
+                        println!(">>>>>>>>>>>>>>>> server:{:?} (NEW)", server_root.proof);
+                        do_fail = true;
+                        continue;
+                    }
+                    _ => unreachable!(),
+                }
+
+                //if client_vv != server_vv {
+                //    let server_root_ = load_latest_root_node(server_index, server_id).await;
+                //    println!(
+                //        ">>>>>>>>>> server root now {:?}",
+                //        server_root_
+                //            .as_ref()
+                //            .map(|root| root.proof.version_vector.clone())
+                //    );
+                //    assert_eq!(client_vv, server_vv);
+                //}
+
+                // client has now fully downloaded server's latest snapshot.
+                //assert_eq!(
+                //    client_root.proof.version_vector,
+                //    server_root.proof.version_vector
+                //);
+                //break;
+            }
+        }
+
+        recv_any(&mut rx).await
+    }
+
+    if do_fail {
+        panic!();
     }
 }
 
@@ -462,6 +592,7 @@ async fn create_changeset(
     write_keys: &Keypair,
     size: usize,
 ) {
+    let old_root = load_latest_root_node(index, writer_id.clone()).await;
     let branch = index.get_branch(*writer_id);
 
     for _ in 0..size {
@@ -469,6 +600,7 @@ async fn create_changeset(
     }
 
     let mut tx = index.pool.begin_write().await.unwrap();
+    println!("network/tests.rs/create_changeset");
     branch
         .bump(&mut tx, &VersionVectorOp::IncrementLocal, write_keys)
         .await
@@ -476,6 +608,16 @@ async fn create_changeset(
     tx.commit().await.unwrap();
 
     branch.notify();
+
+    let new_root = load_latest_root_node(index, writer_id.clone()).await;
+    assert_ne!(
+        old_root.as_ref().map(|r| &r.proof.version_vector),
+        new_root.as_ref().map(|r| &r.proof.version_vector)
+    );
+    println!(
+        "network/tests.rs/create_changeset end index_id:{:?} new_root:{:?}",
+        index.id, new_root
+    );
 }
 
 async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, write_keys: &Keypair) {
@@ -505,9 +647,49 @@ async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, writ
 }
 
 async fn load_latest_root_node(index: &Index, writer_id: PublicKey) -> Option<RootNode> {
-    RootNode::load_latest_by_writer(&mut index.pool.acquire().await.unwrap(), writer_id)
+    let mut pool = index.pool.acquire().await.unwrap();
+    let r = RootNode::load_latest_by_writer(&mut pool, writer_id)
         .await
-        .unwrap()
+        .unwrap();
+
+    drop(pool);
+    println!(
+        "load_latest_root_node writer_id:{:?} {:?} {:?}",
+        writer_id,
+        r.as_ref().map(|p| &p.proof.version_vector),
+        r.as_ref().map(|p| &p.proof.hash)
+    );
+
+    r
+}
+
+async fn load_latest_root_node_(
+    s: &str,
+    i: u32,
+    index_id: &PublicKey,
+    index: &Index,
+    writer_id: PublicKey,
+) -> Option<RootNode> {
+    let mut pool = index.pool.acquire().await.unwrap();
+    let r = RootNode::load_latest_by_writer(&mut pool, writer_id)
+        .await
+        .unwrap();
+
+    let mut j = 0;
+
+    println!(
+        "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+        s,
+        i,
+        index_id,
+        writer_id,
+        r.as_ref().map(|p| &p.proof.version_vector),
+        r.as_ref().map(|p| &p.proof.hash)
+    );
+
+    drop(pool);
+
+    r
 }
 
 // Simulate connection between two replicas until the given future completes.

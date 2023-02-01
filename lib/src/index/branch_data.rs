@@ -307,6 +307,11 @@ impl SnapshotData {
             write_keys,
         );
 
+        println!(
+            "index/branch_data.rs/bump branch_id:{:?} new_proof:{:?}",
+            self.branch_id(),
+            new_proof
+        );
         self.create_root_node(tx, new_proof, self.root_node.summary)
             .await
     }
@@ -426,6 +431,7 @@ impl SnapshotData {
             .incremented(writer_id);
         let new_proof = Proof::new(writer_id, new_version_vector, path.root_hash, write_keys);
 
+        println!("index/branch_data.rs/save_path {:?}", new_proof);
         self.create_root_node(tx, new_proof, path.root_summary)
             .await
     }
@@ -442,6 +448,7 @@ impl SnapshotData {
             "create local snapshot"
         );
 
+        println!("index/branch_data.rs/create_root_node {:?}", new_proof);
         self.root_node = RootNode::create(tx, new_proof, new_summary).await?;
 
         Ok(())

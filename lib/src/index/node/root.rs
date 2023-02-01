@@ -54,6 +54,7 @@ impl RootNode {
         proof: Proof,
         summary: Summary,
     ) -> Result<Self> {
+        println!("RootNode.create {:?}", proof);
         // Check that the root node to be created is newer than the latest existing root node in
         // the same branch.
         let old_vv: VersionVector = sqlx::query(

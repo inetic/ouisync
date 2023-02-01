@@ -541,6 +541,7 @@ mod tests {
             &write_keys,
         );
 
+        println!("store.rs/block_ids_excludes_blocks_from_incomplete_snapshots");
         store
             .index
             .receive_root_node(proof.into(), Summary::INCOMPLETE)
