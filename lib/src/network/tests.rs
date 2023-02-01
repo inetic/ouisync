@@ -676,50 +676,64 @@ async fn load_latest_root_node_(
     //    .unwrap();
     let mut r = RootNode::load_all_by_writer(&mut pool, writer_id);
 
-    if s != "a" && s != "c" {
-        let r = r.try_next().await.unwrap();
-        println!(
-            "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
-            s,
-            i,
-            index_id,
-            writer_id,
-            r.as_ref().map(|p| &p.proof.version_vector),
-            r.as_ref().map(|p| &p.proof.hash)
-        );
+    let mut highest: Option<RootNode> = None;
 
-        r
-    } else {
-        let mut j = 0;
-        let mut first = None;
-        let mut last_snapshot_id = None;
-
-        while let Some(g) = r.try_next().await.unwrap() {
-            if j == 0 {
-                first = Some(g.clone());
+    while let Some(g) = r.try_next().await.unwrap() {
+        if let Some(highest) = &mut highest {
+            if g.snapshot_id > highest.snapshot_id {
+                *highest = g;
             }
-
-            match last_snapshot_id {
-                Some(id) => {
-                    assert!(id > g.snapshot_id);
-                }
-                None => {}
-            }
-            last_snapshot_id = Some(g.snapshot_id);
-
-            println!(
-                "{} load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
-                j, s, i, index_id, writer_id, g.proof.version_vector, g.proof.hash
-            );
-            j += 1;
+        } else {
+            highest = Some(g);
         }
-        if first.is_none() {
-            println!("NONE");
-        }
-        //assert!(first.is_some());
-
-        first
     }
+
+    highest
+
+    //if s != "a" && s != "c" {
+    //    let r = r.try_next().await.unwrap();
+    //    println!(
+    //        "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+    //        s,
+    //        i,
+    //        index_id,
+    //        writer_id,
+    //        r.as_ref().map(|p| &p.proof.version_vector),
+    //        r.as_ref().map(|p| &p.proof.hash)
+    //    );
+
+    //    r
+    //} else {
+    //    let mut j = 0;
+    //    let mut first = None;
+    //    let mut last_snapshot_id = None;
+
+    //    while let Some(g) = r.try_next().await.unwrap() {
+    //        if j == 0 {
+    //            first = Some(g.clone());
+    //        }
+
+    //        match last_snapshot_id {
+    //            Some(id) => {
+    //                assert!(id > g.snapshot_id);
+    //            }
+    //            None => {}
+    //        }
+    //        last_snapshot_id = Some(g.snapshot_id);
+
+    //        println!(
+    //            "{} load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+    //            j, s, i, index_id, writer_id, g.proof.version_vector, g.proof.hash
+    //        );
+    //        j += 1;
+    //    }
+    //    if first.is_none() {
+    //        println!("NONE");
+    //    }
+    //    //assert!(first.is_some());
+
+    //    first
+    //}
 
     //drop(pool);
 
