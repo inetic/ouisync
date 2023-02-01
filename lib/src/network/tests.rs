@@ -491,12 +491,11 @@ async fn wait_until_snapshots_in_sync_(
     let mut rx = client_index.subscribe();
 
     let server_root = load_latest_root_node_("a", i, &server_id, server_index, server_id).await;
-    let mut server_root = server_root.unwrap();
-    //let mut server_root = if let Some(server_root) = server_root {
-    //    server_root
-    //} else {
-    //    return;
-    //};
+    let mut server_root = if let Some(server_root) = server_root {
+        server_root
+    } else {
+        return;
+    };
 
     assert!(!server_root.proof.version_vector.is_empty());
     //if server_root.proof.version_vector.is_empty() {
@@ -670,26 +669,61 @@ async fn load_latest_root_node_(
     index: &Index,
     writer_id: PublicKey,
 ) -> Option<RootNode> {
+    use futures_util::TryStreamExt;
     let mut pool = index.pool.acquire().await.unwrap();
-    let r = RootNode::load_latest_by_writer(&mut pool, writer_id)
-        .await
-        .unwrap();
+    //let r = RootNode::load_latest_by_writer(&mut pool, writer_id)
+    //    .await
+    //    .unwrap();
+    let mut r = RootNode::load_all_by_writer(&mut pool, writer_id);
 
-    let mut j = 0;
+    if s != "a" && s != "c" {
+        let r = r.try_next().await.unwrap();
+        println!(
+            "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+            s,
+            i,
+            index_id,
+            writer_id,
+            r.as_ref().map(|p| &p.proof.version_vector),
+            r.as_ref().map(|p| &p.proof.hash)
+        );
 
-    println!(
-        "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
-        s,
-        i,
-        index_id,
-        writer_id,
-        r.as_ref().map(|p| &p.proof.version_vector),
-        r.as_ref().map(|p| &p.proof.hash)
-    );
+        r
+    } else {
+        let mut j = 0;
+        let mut first = None;
+        let mut last_snapshot_id = None;
 
-    drop(pool);
+        while let Some(g) = r.try_next().await.unwrap() {
+            if j == 0 {
+                first = Some(g.clone());
+            }
 
-    r
+            match last_snapshot_id {
+                Some(id) => {
+                    assert!(id > g.snapshot_id);
+                }
+                None => {}
+            }
+            last_snapshot_id = Some(g.snapshot_id);
+
+            println!(
+                "{} load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+                j, s, i, index_id, writer_id, g.proof.version_vector, g.proof.hash
+            );
+            j += 1;
+        }
+        if first.is_none() {
+            println!("NONE");
+        }
+        //assert!(first.is_some());
+
+        first
+    }
+
+    //drop(pool);
+
+    //r
 }
 
 // Simulate connection between two replicas until the given future completes.
