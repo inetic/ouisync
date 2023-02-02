@@ -79,30 +79,18 @@ async fn transfer_snapshot_between_two_replicas_case(
         "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! BEGIN {} {} {} {}",
         leaf_count, changeset_count, changeset_size, rng_seed
     );
+
     assert!(changeset_size > 0);
 
     let mut rng = StdRng::seed_from_u64(rng_seed);
 
     let write_keys = Keypair::generate(&mut rng);
     let (_a_base_dir, a_store, a_id) = create_store(&mut rng, &write_keys).await;
-    //let (_b_base_dir, b_store, b_id) = create_store(&mut rng, &write_keys).await;
-
-    let snapshot = Snapshot::generate(&mut rng, leaf_count);
-    save_snapshot(&a_store.index, a_id, &write_keys, &snapshot).await;
-    receive_blocks(&a_store, &snapshot).await;
 
     let mut i = 0;
 
-    //assert!(load_latest_root_node_("0", i, &b_id, &b_store.index, a_id)
-    //    .await
-    //    .is_none());
-
-    //let mut server = create_server(a_store.index.clone());
-    //let mut client = create_client(b_store.clone());
     let a_store_index = a_store.index.clone();
 
-    // Wait until replica B catches up to replica A, then have replica A perform a local change
-    // and repeat.
     let drive = async {
         let mut remaining_changesets = changeset_count;
 
@@ -110,15 +98,37 @@ async fn transfer_snapshot_between_two_replicas_case(
             i += 1;
 
             //wait_until_snapshots_in_sync_(i, &a_store.index, a_id, &b_store.index, &b_id).await;
-            let server_root = load_latest_root_node_("a", i, &a_id, &a_store.index, a_id).await;
 
             if remaining_changesets > 0 {
-                create_changeset(&mut rng, &a_store.index, &a_id, &write_keys, changeset_size)
-                    .await;
+                //create_changeset_(&mut rng, &a_store.index, &a_id, &write_keys, changeset_size)
+                //    .await;
+
+                let index = &a_store.index;
+                let writer_id = &a_id;
+                let size = changeset_size;
+
+                let branch = index.get_branch(*writer_id);
+
+                for _ in 0..size {
+                    create_block(&mut rng, index, &branch, &write_keys).await;
+                }
+
+                let mut tx = index.pool.begin_write().await.unwrap();
+                branch
+                    .bump(&mut tx, &VersionVectorOp::IncrementLocal, &write_keys)
+                    .await
+                    .unwrap();
+
+                tx.commit().await.unwrap();
+
+                branch.notify();
+
                 remaining_changesets -= 1;
             } else {
                 break;
             }
+
+            let server_root = load_latest_root_node_("a", i, &a_id, &a_store.index, a_id).await;
         }
     };
 
@@ -132,20 +142,39 @@ async fn transfer_snapshot_between_two_replicas_case(
     select! {
         biased; // deterministic poll order for repeatable tests
         _ = drive => (),
-        //result = server.0.run() => result.unwrap(),
         _ = drain_subscription => panic!("drained"),
         _ = time::sleep(TIMEOUT) => panic!("test timed out"),
     }
-    //simulate_connection_until(&mut server, &mut client, drive).await;
 
     // HACK: prevent "too many open files" error.
     a_store.db().close().await.unwrap();
-    //b_store.db().close().await.unwrap();
 
     println!(
         "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! END {} {} {} {}",
         leaf_count, changeset_count, changeset_size, rng_seed
     );
+}
+async fn create_changeset_(
+    rng: &mut StdRng,
+    index: &Index,
+    writer_id: &PublicKey,
+    write_keys: &Keypair,
+    size: usize,
+) {
+    let branch = index.get_branch(*writer_id);
+
+    for _ in 0..size {
+        create_block(rng, index, &branch, write_keys).await;
+    }
+
+    let mut tx = index.pool.begin_write().await.unwrap();
+    branch
+        .bump(&mut tx, &VersionVectorOp::IncrementLocal, write_keys)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    branch.notify();
 }
 
 // NOTE: Reducing the number of cases otherwise this test is too slow.
