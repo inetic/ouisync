@@ -121,7 +121,7 @@ async fn transfer_snapshot_between_two_replicas_case(
 
                 tx.commit().await.unwrap();
 
-                branch.notify();
+                //branch.notify();
 
                 remaining_changesets -= 1;
             } else {
@@ -135,7 +135,8 @@ async fn transfer_snapshot_between_two_replicas_case(
     let drain_subscription = async {
         let mut sub = a_store_index.subscribe();
         loop {
-            sub.recv().await;
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            //sub.recv().await;
         }
     };
 
