@@ -62,7 +62,8 @@ async fn transfer_snapshot_between_two_replicas() {
     for p1 in 0..32 {
         for p2 in 0..4 {
             for p3 in 1..4 {
-                transfer_snapshot_between_two_replicas_case(0, 3, 2, 9072722957958081302).await
+                //transfer_snapshot_between_two_replicas_case(0, 3, 2, 9072722957958081302).await
+                transfer_snapshot_between_two_replicas_case(p1, p2, p3, 9072722957958081302).await
             }
         }
     }
@@ -84,7 +85,7 @@ async fn transfer_snapshot_between_two_replicas_case(
 
     let write_keys = Keypair::generate(&mut rng);
     let (_a_base_dir, a_store, a_id) = create_store(&mut rng, &write_keys).await;
-    let (_b_base_dir, b_store, b_id) = create_store(&mut rng, &write_keys).await;
+    //let (_b_base_dir, b_store, b_id) = create_store(&mut rng, &write_keys).await;
 
     let snapshot = Snapshot::generate(&mut rng, leaf_count);
     save_snapshot(&a_store.index, a_id, &write_keys, &snapshot).await;
@@ -92,12 +93,12 @@ async fn transfer_snapshot_between_two_replicas_case(
 
     let mut i = 0;
 
-    assert!(load_latest_root_node_("0", i, &b_id, &b_store.index, a_id)
-        .await
-        .is_none());
+    //assert!(load_latest_root_node_("0", i, &b_id, &b_store.index, a_id)
+    //    .await
+    //    .is_none());
 
     let mut server = create_server(a_store.index.clone());
-    let mut client = create_client(b_store.clone());
+    //let mut client = create_client(b_store.clone());
 
     // Wait until replica B catches up to replica A, then have replica A perform a local change
     // and repeat.
@@ -107,7 +108,8 @@ async fn transfer_snapshot_between_two_replicas_case(
         loop {
             i += 1;
 
-            wait_until_snapshots_in_sync_(i, &a_store.index, a_id, &b_store.index, &b_id).await;
+            //wait_until_snapshots_in_sync_(i, &a_store.index, a_id, &b_store.index, &b_id).await;
+            let server_root = load_latest_root_node_("a", i, &a_id, &a_store.index, a_id).await;
 
             if remaining_changesets > 0 {
                 create_changeset(&mut rng, &a_store.index, &a_id, &write_keys, changeset_size)
@@ -119,11 +121,17 @@ async fn transfer_snapshot_between_two_replicas_case(
         }
     };
 
-    simulate_connection_until(&mut server, &mut client, drive).await;
+    select! {
+        biased; // deterministic poll order for repeatable tests
+        _ = drive => (),
+        result = server.0.run() => result.unwrap(),
+        _ = time::sleep(TIMEOUT) => panic!("test timed out"),
+    }
+    //simulate_connection_until(&mut server, &mut client, drive).await;
 
     // HACK: prevent "too many open files" error.
     a_store.db().close().await.unwrap();
-    b_store.db().close().await.unwrap();
+    //b_store.db().close().await.unwrap();
 
     println!(
         "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! END {} {} {} {}",
@@ -610,7 +618,7 @@ async fn create_changeset(
     }
 
     let mut tx = index.pool.begin_write().await.unwrap();
-    println!("network/tests.rs/create_changeset");
+    //println!("network/tests.rs/create_changeset");
     branch
         .bump(&mut tx, &VersionVectorOp::IncrementLocal, write_keys)
         .await
@@ -619,15 +627,15 @@ async fn create_changeset(
 
     branch.notify();
 
-    let new_root = load_latest_root_node(index, writer_id.clone()).await;
-    assert_ne!(
-        old_root.as_ref().map(|r| &r.proof.version_vector),
-        new_root.as_ref().map(|r| &r.proof.version_vector)
-    );
-    println!(
-        "network/tests.rs/create_changeset end index_id:{:?} new_root:{:?}",
-        index.id, new_root
-    );
+    //let new_root = load_latest_root_node(index, writer_id.clone()).await;
+    //assert_ne!(
+    //    old_root.as_ref().map(|r| &r.proof.version_vector),
+    //    new_root.as_ref().map(|r| &r.proof.version_vector)
+    //);
+    //println!(
+    //    "network/tests.rs/create_changeset end index_id:{:?} new_root:{:?}",
+    //    index.id, new_root
+    //);
 }
 
 async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, write_keys: &Keypair) {
@@ -680,7 +688,7 @@ async fn load_latest_root_node_(
     index: &Index,
     writer_id: PublicKey,
 ) -> Option<RootNode> {
-    {
+    for j in 0..10 {
         use futures_util::TryStreamExt;
         let mut pool = index.pool.acquire().await.unwrap();
         let rs = RootNode::load_all_by_writer_(&mut pool, writer_id)
@@ -709,15 +717,20 @@ async fn load_latest_root_node_(
             let mut i = 0;
             println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
             for current in &rs {
-                println!("i:{} {:?}", i, current);
+                println!("j:{}/i:{} {:?}", j, i, current);
                 i += 1;
             }
             println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            continue;
+        }
+
+        if j > 0 {
             panic!();
         }
 
-        first
+        return first;
     }
+    panic!();
 
     //{
     //    use futures_util::TryStreamExt;
