@@ -681,11 +681,11 @@ async fn create_changeset(
 async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, write_keys: &Keypair) {
     let encoded_locator = rng.gen();
 
-    let mut content = vec![0; BLOCK_SIZE];
-    rng.fill(&mut content[..]);
+    //let mut content = vec![0; BLOCK_SIZE];
+    //rng.fill(&mut content[..]);
 
-    let block_id = BlockId::from_content(&content);
-    //let nonce = rng.gen();
+    let block_id = rand::random(); //from_content(&content);
+                                   //let nonce = rng.gen();
 
     let mut tx = index.pool.begin_write().await.unwrap();
     branch
