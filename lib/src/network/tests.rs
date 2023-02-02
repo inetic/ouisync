@@ -685,7 +685,7 @@ async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, writ
     rng.fill(&mut content[..]);
 
     let block_id = BlockId::from_content(&content);
-    let nonce = rng.gen();
+    //let nonce = rng.gen();
 
     let mut tx = index.pool.begin_write().await.unwrap();
     branch
@@ -698,9 +698,9 @@ async fn create_block(rng: &mut StdRng, index: &Index, branch: &BranchData, writ
         )
         .await
         .unwrap();
-    block::write(&mut tx, &block_id, &content, &nonce)
-        .await
-        .unwrap();
+    //block::write(&mut tx, &block_id, &content, &nonce)
+    //    .await
+    //    .unwrap();
     tx.commit().await.unwrap();
 }
 
