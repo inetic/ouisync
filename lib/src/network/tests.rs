@@ -113,13 +113,13 @@ async fn transfer_snapshot_between_two_replicas_case(
                     create_block(&mut rng, index, &branch, &write_keys).await;
                 }
 
-                let mut tx = index.pool.begin_write().await.unwrap();
-                branch
-                    .bump(&mut tx, &VersionVectorOp::IncrementLocal, &write_keys)
-                    .await
-                    .unwrap();
+                //let mut tx = index.pool.begin_write().await.unwrap();
+                //branch
+                //    .bump(&mut tx, &VersionVectorOp::IncrementLocal, &write_keys)
+                //    .await
+                //    .unwrap();
 
-                tx.commit().await.unwrap();
+                //tx.commit().await.unwrap();
 
                 //branch.notify();
 
