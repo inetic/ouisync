@@ -133,9 +133,10 @@ async fn transfer_snapshot_between_two_replicas_case(
     };
 
     let drain_subscription = async {
-        let mut sub = a_store_index.subscribe();
+        //let mut sub = a_store_index.subscribe();
         loop {
-            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            tokio::task::yield_now().await;
+            //tokio::time::sleep(std::time::Duration::from_millis(1)).await;
             //sub.recv().await;
         }
     };
