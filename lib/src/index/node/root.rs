@@ -245,6 +245,37 @@ impl RootNode {
         .err_into()
     }
 
+    #[cfg(test)]
+    pub async fn load_all_by_writer_(
+        conn: &mut db::Connection,
+        writer_id: PublicKey,
+    ) -> Result<Vec<Self>> {
+        Ok(sqlx::query(
+            "SELECT
+                 snapshot_id,
+                 versions,
+                 hash,
+                 signature,
+                 is_complete,
+                 block_presence
+             FROM snapshot_root_nodes
+             WHERE writer_id = ?
+             ORDER BY snapshot_id DESC",
+        )
+        .bind(writer_id.as_ref().to_owned()) // needed to satisfy the borrow checker.
+        .map(move |row: sqlx::sqlite::SqliteRow| Self {
+            snapshot_id: row.get(0),
+            proof: Proof::new_unchecked(writer_id, row.get(1), row.get(2), row.get(3)),
+            summary: Summary {
+                is_complete: row.get(4),
+                block_presence: row.get(5),
+            },
+        })
+        .fetch_all(conn)
+        .await?)
+        //.err_into()
+    }
+
     /// Returns the latest root node of the specified writer or `None` if no snapshot of that
     /// writer exists.
     #[cfg(test)]

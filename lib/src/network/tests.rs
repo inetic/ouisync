@@ -42,19 +42,30 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 //
 // NOTE: Reducing the number of cases otherwise this test is too slow.
 // TODO: Make it faster and increase the cases.
-#[proptest(cases = 8)]
-fn transfer_snapshot_between_two_replicas(
-    #[strategy(0usize..32)] leaf_count: usize,
-    #[strategy(0usize..2)] changeset_count: usize,
-    #[strategy(1usize..4)] changeset_size: usize,
-    #[strategy(test_utils::rng_seed_strategy())] rng_seed: u64,
-) {
-    test_utils::run(transfer_snapshot_between_two_replicas_case(
-        leaf_count,
-        changeset_count,
-        changeset_size,
-        rng_seed,
-    ))
+//#[proptest(cases = 1)]
+//fn transfer_snapshot_between_two_replicas(
+//    #[strategy(0usize..32)] leaf_count: usize,
+//    #[strategy(0usize..2)] changeset_count: usize,
+//    #[strategy(1usize..4)] changeset_size: usize,
+//    #[strategy(test_utils::rng_seed_strategy())] rng_seed: u64,
+//) {
+//    test_utils::run(transfer_snapshot_between_two_replicas_case(
+//        leaf_count,
+//        changeset_count,
+//        changeset_size,
+//        rng_seed,
+//    ))
+//}
+
+#[tokio::test]
+async fn transfer_snapshot_between_two_replicas() {
+    for p1 in 0..32 {
+        for p2 in 0..4 {
+            for p3 in 1..4 {
+                transfer_snapshot_between_two_replicas_case(0, 3, 2, 9072722957958081302).await
+            }
+        }
+    }
 }
 
 async fn transfer_snapshot_between_two_replicas_case(
@@ -669,75 +680,117 @@ async fn load_latest_root_node_(
     index: &Index,
     writer_id: PublicKey,
 ) -> Option<RootNode> {
-    use futures_util::TryStreamExt;
-    let mut pool = index.pool.acquire().await.unwrap();
-    //let r = RootNode::load_latest_by_writer(&mut pool, writer_id)
-    //    .await
-    //    .unwrap();
-    let mut r = RootNode::load_all_by_writer(&mut pool, writer_id);
+    {
+        use futures_util::TryStreamExt;
+        let mut pool = index.pool.acquire().await.unwrap();
+        let rs = RootNode::load_all_by_writer_(&mut pool, writer_id)
+            .await
+            .unwrap();
+        let mut first = None;
+        let mut prev_snapshot = None;
+        let mut log = false;
 
-    let mut highest: Option<RootNode> = None;
-
-    while let Some(g) = r.try_next().await.unwrap() {
-        if let Some(highest) = &mut highest {
-            if g.snapshot_id > highest.snapshot_id {
-                *highest = g;
+        for current in &rs {
+            if first.is_none() {
+                first = Some(current.clone());
             }
-        } else {
-            highest = Some(g);
+
+            if let Some(ps) = prev_snapshot {
+                if current.snapshot_id > ps {
+                    log = true;
+                    break;
+                }
+            }
+
+            prev_snapshot = Some(current.snapshot_id);
         }
+
+        if log {
+            let mut i = 0;
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            for current in &rs {
+                println!("i:{} {:?}", i, current);
+                i += 1;
+            }
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            panic!();
+        }
+
+        first
     }
 
-    highest
+    //{
+    //    use futures_util::TryStreamExt;
+    //    let mut pool = index.pool.begin_read().await.unwrap();
+    //    let mut r = RootNode::load_all_by_writer(&mut pool, writer_id);
+    //    let mut highest: Option<RootNode> = None;
 
-    //if s != "a" && s != "c" {
-    //    let r = r.try_next().await.unwrap();
-    //    println!(
-    //        "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
-    //        s,
-    //        i,
-    //        index_id,
-    //        writer_id,
-    //        r.as_ref().map(|p| &p.proof.version_vector),
-    //        r.as_ref().map(|p| &p.proof.hash)
-    //    );
+    //    let mut good_order = false;
 
-    //    r
-    //} else {
-    //    let mut j = 0;
-    //    let mut first = None;
-    //    let mut last_snapshot_id = None;
-
-    //    while let Some(g) = r.try_next().await.unwrap() {
-    //        if j == 0 {
-    //            first = Some(g.clone());
-    //        }
-
-    //        match last_snapshot_id {
-    //            Some(id) => {
-    //                assert!(id > g.snapshot_id);
+    //    while !good_order {
+    //        while let Some(g) = r.try_next().await.unwrap() {
+    //            if let Some(highest) = &mut highest {
+    //                if g.snapshot_id > highest.snapshot_id {
+    //                    *highest = g;
+    //                }
+    //            } else {
+    //                highest = Some(g);
     //            }
-    //            None => {}
     //        }
-    //        last_snapshot_id = Some(g.snapshot_id);
-
-    //        println!(
-    //            "{} load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
-    //            j, s, i, index_id, writer_id, g.proof.version_vector, g.proof.hash
-    //        );
-    //        j += 1;
     //    }
-    //    if first.is_none() {
-    //        println!("NONE");
-    //    }
-    //    //assert!(first.is_some());
 
-    //    first
+    //    highest
     //}
 
-    //drop(pool);
+    //{
+    //    use futures_util::TryStreamExt;
+    //    let mut pool = index.pool.begin_read().await.unwrap();
+    //    let mut r = RootNode::load_all_by_writer(&mut pool, writer_id);
+    //    if s != "a" && s != "c" {
+    //        let r = r.try_next().await.unwrap();
+    //        println!(
+    //            "load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+    //            s,
+    //            i,
+    //            index_id,
+    //            writer_id,
+    //            r.as_ref().map(|p| &p.proof.version_vector),
+    //            r.as_ref().map(|p| &p.proof.hash)
+    //        );
 
-    //r
+    //        r
+    //    } else {
+    //        let mut j = 0;
+    //        let mut first = None;
+    //        let mut last_snapshot_id = None;
+
+    //        while let Some(current) = r.try_next().await.unwrap() {
+    //            if j == 0 {
+    //                first = Some(current.clone());
+    //            }
+
+    //            match last_snapshot_id {
+    //                Some(last_snapshot_id) => {
+    //                    assert!(last_snapshot_id > current.snapshot_id);
+    //                }
+    //                None => {}
+    //            }
+    //            last_snapshot_id = Some(current.snapshot_id);
+
+    //            println!(
+    //                "{} load_latest_root_node s:{:?} i:{}, index_id:{:?} writer_id:{:?} {:?} {:?}",
+    //                j, s, i, index_id, writer_id, current.proof.version_vector, current.proof.hash
+    //            );
+    //            j += 1;
+    //        }
+    //        if first.is_none() {
+    //            println!("NONE");
+    //        }
+    //        //assert!(first.is_some());
+
+    //        first
+    //    }
+    //}
 }
 
 // Simulate connection between two replicas until the given future completes.
