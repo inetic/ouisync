@@ -169,25 +169,27 @@ impl<'a> Monitor<'a> {
         let mut subscription = self.index.subscribe();
 
         // send initial branches
-        self.handle_all_branches_changed().await?;
+        //self.handle_all_branches_changed().await?;
 
         loop {
-            match subscription.recv().await {
-                Ok(Event {
-                    payload:
-                        Payload::BranchChanged(branch_id) | Payload::BlockReceived { branch_id, .. },
-                    ..
-                }) => self.handle_branch_changed(branch_id).await?,
-                Ok(Event {
-                    payload: Payload::FileClosed,
-                    ..
-                }) => continue,
-                Err(RecvError::Lagged(_)) => {
-                    tracing::warn!("event receiver lagged");
-                    self.handle_all_branches_changed().await?
-                }
-                Err(RecvError::Closed) => break,
-            }
+            let r = subscription.recv().await;
+            //println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {} {:?}", line!(), r);
+            //match r {
+            //    Ok(Event {
+            //        payload:
+            //            Payload::BranchChanged(branch_id) | Payload::BlockReceived { branch_id, .. },
+            //        ..
+            //    }) => self.handle_branch_changed_(branch_id).await?,
+            //    Ok(Event {
+            //        payload: Payload::FileClosed,
+            //        ..
+            //    }) => continue,
+            //    Err(RecvError::Lagged(_)) => {
+            //        tracing::warn!("event receiver lagged");
+            //        self.handle_all_branches_changed().await?
+            //    }
+            //    Err(RecvError::Closed) => break,
+            //}
         }
 
         Ok(())
@@ -199,6 +201,10 @@ impl<'a> Monitor<'a> {
             self.handle_root_node_changed(root_node).await?;
         }
 
+        Ok(())
+    }
+
+    async fn handle_branch_changed_(&self, branch_id: PublicKey) -> Result<()> {
         Ok(())
     }
 
