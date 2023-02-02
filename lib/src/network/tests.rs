@@ -97,8 +97,9 @@ async fn transfer_snapshot_between_two_replicas_case(
     //    .await
     //    .is_none());
 
-    let mut server = create_server(a_store.index.clone());
+    //let mut server = create_server(a_store.index.clone());
     //let mut client = create_client(b_store.clone());
+    let a_store_index = a_store.index.clone();
 
     // Wait until replica B catches up to replica A, then have replica A perform a local change
     // and repeat.
@@ -121,10 +122,18 @@ async fn transfer_snapshot_between_two_replicas_case(
         }
     };
 
+    let drain_subscription = async {
+        let mut sub = a_store_index.subscribe();
+        loop {
+            sub.recv().await;
+        }
+    };
+
     select! {
         biased; // deterministic poll order for repeatable tests
         _ = drive => (),
-        result = server.0.run() => result.unwrap(),
+        //result = server.0.run() => result.unwrap(),
+        _ = drain_subscription => panic!("drained"),
         _ = time::sleep(TIMEOUT) => panic!("test timed out"),
     }
     //simulate_connection_until(&mut server, &mut client, drive).await;
@@ -610,7 +619,7 @@ async fn create_changeset(
     write_keys: &Keypair,
     size: usize,
 ) {
-    let old_root = load_latest_root_node(index, writer_id.clone()).await;
+    //let old_root = load_latest_root_node(index, writer_id.clone()).await;
     let branch = index.get_branch(*writer_id);
 
     for _ in 0..size {

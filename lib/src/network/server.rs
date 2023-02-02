@@ -191,8 +191,6 @@ impl<'a> Monitor<'a> {
             //    Err(RecvError::Closed) => break,
             //}
         }
-
-        Ok(())
     }
 
     async fn handle_all_branches_changed(&self) -> Result<()> {
