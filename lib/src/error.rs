@@ -2,16 +2,28 @@ use crate::{
     block::{BlockId, BLOCK_SIZE},
     db,
 };
+#[cfg(test)]
+use std::backtrace::Backtrace;
 use std::{array::TryFromSliceError, fmt, io};
-use thiserror::Error;
 
 /// A specialized `Result` type for convenience.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-#[derive(Debug, Error)]
+/// I think `thiserror` is trying to do something clever when the error enum contains a field of
+/// type `Backtrace`, but it fails with a strange error if it's so. Wrapping `Backtrace` into a
+/// simple wrapper such as this one seems to help.
+#[cfg(test)]
+pub struct BacktraceWrapper(Backtrace);
+
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("database error")]
-    Db(#[from] db::Error),
+    Db {
+        #[source]
+        source: db::Error,
+        #[cfg(test)]
+        backtrace: BacktraceWrapper,
+    },
     #[error("failed to read from or write into the device ID config file")]
     DeviceIdConfig(#[source] io::Error),
     #[error("permission denied")]
@@ -67,15 +79,36 @@ impl Error {
     }
 }
 
+#[cfg(test)]
+impl fmt::Debug for BacktraceWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "{:?}", self.0)
+    }
+}
+
 impl From<TryFromSliceError> for Error {
     fn from(_: TryFromSliceError) -> Self {
         Self::MalformedData
     }
 }
 
+impl From<db::Error> for Error {
+    fn from(src: db::Error) -> Self {
+        Self::Db {
+            source: src.into(),
+            #[cfg(test)]
+            backtrace: BacktraceWrapper(Backtrace::capture()),
+        }
+    }
+}
+
 impl From<sqlx::Error> for Error {
     fn from(src: sqlx::Error) -> Self {
-        Self::Db(src.into())
+        Self::Db {
+            source: src.into(),
+            #[cfg(test)]
+            backtrace: BacktraceWrapper(Backtrace::capture()),
+        }
     }
 }
 

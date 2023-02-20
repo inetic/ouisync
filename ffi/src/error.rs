@@ -34,7 +34,7 @@ pub(crate) trait ToErrorCode {
 impl ToErrorCode for Error {
     fn to_error_code(&self) -> ErrorCode {
         match self {
-            Self::Db(_) => ErrorCode::Db,
+            Self::Db{..} => ErrorCode::Db,
             Self::DeviceIdConfig(_) => ErrorCode::DeviceIdConfig,
             Self::PermissionDenied => ErrorCode::PermissionDenied,
             Self::MalformedData | Self::MalformedDirectory => ErrorCode::MalformedData,
