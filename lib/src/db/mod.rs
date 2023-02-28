@@ -108,6 +108,7 @@ impl Pool {
     /// Use shared write transactions to group multiple writes that don't logically need to be in
     /// the same transaction to improve performance by reducing the number of commits.
     pub async fn begin_shared_write(&self) -> Result<SharedWriteTransaction, sqlx::Error> {
+        panic!();
         let mut shared_tx = self.shared_tx.clone().lock_owned().await;
 
         if shared_tx.is_none() {
@@ -130,7 +131,7 @@ impl Pool {
 }
 
 /// Database connection from pool
-pub(crate) struct PoolConnection(sqlx::pool::PoolConnection<Sqlite>);
+pub(crate) struct PoolConnection(pub sqlx::pool::PoolConnection<Sqlite>);
 
 impl Deref for PoolConnection {
     type Target = Connection;
@@ -178,7 +179,8 @@ pub(crate) struct WriteTransaction(ReadTransaction);
 
 impl WriteTransaction {
     pub async fn commit(self) -> Result<(), sqlx::Error> {
-        self.0 .0.commit().await
+        let handle = tokio::task::spawn(async move { self.0 .0.commit().await });
+        handle.await.unwrap()
     }
 }
 
@@ -209,7 +211,9 @@ pub(crate) struct SharedWriteTransaction(AsyncOwnedMutexGuard<Option<WriteTransa
 impl SharedWriteTransaction {
     pub async fn commit(mut self) -> Result<(), sqlx::Error> {
         // `unwrap` is ok, see the NOTE above.
-        self.0.take().unwrap().commit().await
+        //self.0.take().unwrap().commit().await
+        let handle = tokio::task::spawn(async move { self.0.take().unwrap().commit().await });
+        handle.await.unwrap()
     }
 }
 

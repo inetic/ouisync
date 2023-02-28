@@ -5,6 +5,7 @@ use super::{
 use crate::{
     crypto::{Digest, Hash, Hashable},
     db,
+    debug::DebugPrinter,
     error::Result,
 };
 use futures_util::{future, Stream, TryStreamExt};
@@ -222,6 +223,46 @@ impl InnerNode {
         }
 
         Ok(())
+    }
+
+    pub async fn debug_print(conn: &mut db::Connection, printer: &mut DebugPrinter) {
+        use crate::index::node::summary::MultiBlockPresence;
+        use futures_util::StreamExt;
+
+        let mut inner_nodes = sqlx::query(
+            "SELECT
+                 parent,
+                 bucket,
+                 hash,
+                 is_complete,
+                 block_presence
+             FROM snapshot_inner_nodes
+             ORDER BY parent,bucket,hash DESC",
+        )
+        .fetch(conn)
+        .map_ok(move |row| {
+            (
+                row.get::<Hash, usize>(0),
+                row.get::<u8, usize>(1),
+                row.get::<Hash, usize>(2),
+                row.get::<bool, usize>(3),
+                row.get::<MultiBlockPresence, usize>(4),
+            )
+        });
+
+        while let Some(inner_node) = inner_nodes.next().await {
+            match inner_node {
+                Ok(inner_node) => {
+                    printer.debug(&format_args!(
+                        "InnerNode: parent:{:?}, bucket:{:?}, hash:{:?}, is_complete:{:?}, block_presence:{:?}",
+                        inner_node.0, inner_node.1, inner_node.2, inner_node.3, inner_node.4
+                    ));
+                }
+                Err(err) => {
+                    printer.debug(&format_args!("InnerNode: error: {:?}", err));
+                }
+            }
+        }
     }
 }
 

@@ -386,7 +386,7 @@ impl RootNode {
         Ok(())
     }
 
-    pub async fn debug_print(conn: &mut db::Connection, printer: DebugPrinter) {
+    pub async fn debug_print(conn: &mut db::Connection, printer: &mut DebugPrinter) {
         let mut roots = sqlx::query(
             "SELECT
                  snapshot_id,

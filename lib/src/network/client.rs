@@ -24,6 +24,12 @@ use tracing::instrument;
 // TODO: The number is made up, what would be its ideal value?
 const MAX_QUEUED_RESPONSES: usize = 512;
 
+impl Drop for Client {
+    fn drop(&mut self) {
+        println!("{:?} Client DROP!!!", self.name);
+    }
+}
+
 pub(super) struct Client {
     store: Store,
     rx: mpsc::Receiver<Response>,
@@ -32,10 +38,15 @@ pub(super) struct Client {
     recv_queue: VecDeque<(Success, Option<OwnedSemaphorePermit>)>,
     receive_filter: ReceiveFilter,
     block_tracker: BlockTrackerClient,
+    name: Option<String>,
     _request_sender: ScopedJoinHandle<()>,
 }
 
 impl Client {
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
+
     pub fn new(
         store: Store,
         tx: mpsc::Sender<Content>,
@@ -61,19 +72,79 @@ impl Client {
             recv_queue: VecDeque::new(),
             receive_filter: ReceiveFilter::new(pool),
             block_tracker,
+            name: None,
+            _request_sender: request_sender,
+        }
+    }
+
+    pub fn new_(
+        store: Store,
+        tx: mpsc::Sender<Content>,
+        rx: mpsc::Receiver<Response>,
+        peer_request_limiter: Arc<Semaphore>,
+        stats: Arc<RepositoryStats>,
+        name: String,
+    ) -> Self {
+        println!("Client::new {:?}", name);
+        let pool = store.db().clone();
+        let block_tracker = store.block_tracker.client();
+
+        let pending_requests = Arc::new(PendingRequests::new(stats.clone()));
+
+        // We run the sender in a separate task so we can keep sending requests while we're
+        // processing responses (which sometimes takes a while).
+        let (request_sender, request_tx) =
+            start_sender(tx, pending_requests.clone(), peer_request_limiter, stats);
+
+        Self {
+            store,
+            rx,
+            pending_requests,
+            request_tx,
+            recv_queue: VecDeque::new(),
+            receive_filter: ReceiveFilter::new(pool),
+            block_tracker,
+            name: Some(name),
             _request_sender: request_sender,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        println!("{:?} Client::run resetting receive_filter", self.name);
         self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        self.receive_filter.reset().await?;
+        println!("{:?} Client::run: resetting receive_filter done", self.name);
 
         loop {
             select! {
                 block_id = self.block_tracker.accept() => {
+                    println!("{:?} run: got block_id from block_tracker:{:?}", self.name, block_id);
                     self.send_request(Request::Block(block_id));
                 }
                 response = self.rx.recv() => {
+                    println!("{:?} run: received response {:?}", self.name, response);
                     if let Some(response) = response {
                         self.enqueue_response(response)?;
                     } else {
@@ -163,6 +234,7 @@ impl Client {
         proof: UntrustedProof,
         summary: Summary,
     ) -> Result<(), ReceiveError> {
+        println!("{:?} Client: root_node {:?}", self.name, summary);
         let hash = proof.hash;
         let updated = self.store.index.receive_root_node(proof, summary).await?;
 
@@ -181,11 +253,16 @@ impl Client {
         &mut self,
         nodes: CacheHash<InnerNodeMap>,
     ) -> Result<(), ReceiveError> {
+        println!(
+            "{:?} Client: handle_inner_nodes {:?}",
+            self.name,
+            nodes.hash()
+        );
         let total = nodes.len();
         let (updated_nodes, completed_branches) = self
             .store
             .index
-            .receive_inner_nodes(nodes, &mut self.receive_filter)
+            .receive_inner_nodes_(nodes, &mut self.receive_filter, &self.name)
             .await?;
 
         tracing::trace!(
@@ -213,6 +290,7 @@ impl Client {
         &mut self,
         nodes: CacheHash<LeafNodeSet>,
     ) -> Result<(), ReceiveError> {
+        println!("{:?} Client: handle_leaf_nodes", self.name);
         let total = nodes.len();
         let (updated_blocks, completed_branches) =
             self.store.index.receive_leaf_nodes(nodes).await?;
@@ -264,7 +342,12 @@ impl Client {
         data: BlockData,
         nonce: BlockNonce,
     ) -> Result<(), ReceiveError> {
-        match self.store.write_received_block(&data, &nonce).await {
+        println!("{:?} Client: handle_block", self.name);
+        match self
+            .store
+            .write_received_block_(&data, &nonce, &self.name)
+            .await
+        {
             // Ignore `BlockNotReferenced` errors as they only mean that the block is no longer
             // needed.
             Ok(()) | Err(Error::BlockNotReferenced) => Ok(()),

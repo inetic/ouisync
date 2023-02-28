@@ -89,12 +89,31 @@ impl Index {
     }
 
     pub(crate) fn notify(&self, event: Event) {
-        self.notify_tx.send(event).unwrap_or(0);
+        //self.notify_tx.send(event.clone()).unwrap_or(0);
+        let r = self.notify_tx.send(event.clone());
+        println!("index::notify event:{:?} r:{:?}", event, r);
     }
 
-    pub async fn debug_print(&self, print: DebugPrinter) {
+    pub async fn debug_print(&self, mut print: DebugPrinter) {
         let mut conn = self.pool.acquire().await.unwrap();
-        RootNode::debug_print(&mut conn, print).await;
+        RootNode::debug_print(&mut conn, &mut print).await;
+    }
+
+    pub async fn dump(&self) {
+        let mut conn = self.pool.acquire().await.unwrap();
+        self.dump_with(&mut conn).await;
+    }
+    pub async fn dump_with(&self, conn: &mut db::Connection) {
+        println!("DUMP START");
+        let mut print = DebugPrinter::new();
+        println!("DUMP Roots");
+        RootNode::debug_print(conn, &mut print).await;
+        println!("DUMP Inner nodes");
+        InnerNode::debug_print(conn, &mut print).await;
+        println!("DUMP Leaf nodes");
+        LeafNode::debug_print(conn, &mut print).await;
+        crate::block::debug_print(conn, &mut print).await;
+        println!("DUMP END");
     }
 
     /// Receive `RootNode` from other replica and store it into the db. Returns whether the
@@ -182,6 +201,48 @@ impl Index {
         Ok((updated_nodes, completed_branches))
     }
 
+    pub async fn receive_inner_nodes_(
+        &self,
+        nodes: CacheHash<InnerNodeMap>,
+        receive_filter: &mut ReceiveFilter,
+        name: &Option<String>,
+    ) -> Result<(Vec<Hash>, Vec<PublicKey>), ReceiveError> {
+        let mut tx = self.pool.begin_write().await?;
+        let parent_hash = nodes.hash();
+
+        println!(
+            "{:?} index::receive_inner_nodes {} hash:{:?}",
+            name,
+            line!(),
+            parent_hash
+        );
+        self.check_parent_node_exists(&mut tx, &parent_hash).await?;
+
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+        let updated_nodes = self
+            .find_inner_nodes_with_new_blocks(&mut tx, &nodes, receive_filter)
+            .await?;
+
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+        let mut nodes = nodes.into_inner().into_incomplete();
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+        nodes.inherit_summaries(&mut tx).await?;
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+        nodes.save(&mut tx, &parent_hash).await?;
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+
+        let completed_branches = self.update_summaries(tx, parent_hash).await?;
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+
+        let mut conn = self.pool.acquire().await?;
+        assert!(InnerNode::load_children(&mut conn, &parent_hash)
+            .await
+            .is_ok());
+        println!("{:?} index::receive_inner_nodes {}", name, line!());
+
+        Ok((updated_nodes, completed_branches))
+    }
+
     /// Receive leaf nodes from other replica and store them into the db.
     /// Returns the ids of the blocks that the remote replica has but the local one has not.
     /// Also returns the ids of the branches that became complete.
@@ -189,11 +250,13 @@ impl Index {
         &self,
         nodes: CacheHash<LeafNodeSet>,
     ) -> Result<(Vec<BlockId>, Vec<PublicKey>), ReceiveError> {
+        println!("index::receive_leaf_nodes 1 nodes:{:?}", *nodes);
         let mut tx = self.pool.begin_write().await?;
         let parent_hash = nodes.hash();
 
         self.check_parent_node_exists(&mut tx, &parent_hash).await?;
 
+        println!("index::receive_leaf_nodes 2");
         let updated_blocks = self
             .find_leaf_nodes_with_new_blocks(&mut tx, &nodes)
             .await?;
@@ -205,6 +268,7 @@ impl Index {
             .await?;
 
         let completed_branches = self.update_summaries(tx, parent_hash).await?;
+        println!("index::receive_leaf_nodes 3");
 
         Ok((updated_blocks, completed_branches))
     }

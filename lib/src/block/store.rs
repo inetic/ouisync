@@ -1,6 +1,7 @@
 use super::{BlockId, BLOCK_SIZE};
 use crate::{
     db,
+    debug::DebugPrinter,
     error::{Error, Result},
 };
 use sqlx::{sqlite::SqliteRow, Row};
@@ -107,6 +108,25 @@ pub(crate) async fn remove(tx: &mut db::WriteTransaction, id: &BlockId) -> Resul
         .await?;
 
     Ok(())
+}
+
+pub(crate) async fn debug_print(conn: &mut db::Connection, printer: &mut DebugPrinter) {
+    use futures_util::{StreamExt, TryStreamExt};
+
+    let mut blocks = sqlx::query("SELECT id FROM blocks ORDER BY id DESC")
+        .fetch(conn)
+        .map_ok(move |row| row.get::<BlockId, usize>(0));
+
+    while let Some(block) = blocks.next().await {
+        match block {
+            Ok(block) => {
+                printer.debug(&format_args!("Block: id:{:?}", block.0));
+            }
+            Err(err) => {
+                printer.debug(&format_args!("Block: error: {:?}", err));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

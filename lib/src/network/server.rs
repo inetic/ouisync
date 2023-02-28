@@ -192,6 +192,11 @@ impl<'a> Monitor<'a> {
 
     async fn handle_all_branches_changed(&self) -> Result<()> {
         let root_nodes = self.load_all_root_nodes().await?;
+        println!(
+            "Server::handle_all_branches_changed root_nodes:{:?}",
+            root_nodes
+        );
+
         for root_node in root_nodes {
             self.handle_root_node_changed(root_node).await?;
         }
@@ -242,10 +247,23 @@ impl<'a> Monitor<'a> {
     }
 
     async fn load_all_root_nodes(&self) -> Result<Vec<RootNode>> {
+        println!("Server::load_all_root_nodes start");
         let mut conn = self.index.pool.acquire().await?;
-        RootNode::load_all_latest_complete(&mut conn)
+        let vec: Vec<RootNode> = RootNode::load_all_latest_complete(&mut conn)
             .try_collect()
-            .await
+            .await?;
+
+        if vec.is_empty() {
+            println!("BEGIN Server::load_all_root_nodes dump");
+            self.index.dump_with(&mut conn).await;
+            let r: Result<Vec<RootNode>> = RootNode::load_all_latest_complete(&mut conn)
+                .try_collect()
+                .await;
+            println!("END Server::load_all_root_nodes dump (RECHECK: {:?})", r);
+            panic!();
+        }
+
+        Ok(vec)
     }
 
     async fn load_root_node(&self, branch_id: PublicKey) -> Result<RootNode> {

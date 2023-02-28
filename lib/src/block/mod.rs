@@ -6,7 +6,7 @@ mod store;
 mod tracker;
 
 pub(crate) use self::{
-    store::{count, exists, read, remove, write, BlockNonce},
+    store::{count, debug_print, exists, read, remove, write, BlockNonce},
     tracker::{BlockTracker, BlockTrackerClient},
 };
 

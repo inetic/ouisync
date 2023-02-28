@@ -23,4 +23,5 @@ debug = 1
 
 [patch.crates-io]
 # Contains latest sqlite which seems to fix some bugs that were affecting us
-sqlx = { git = "https://github.com/madadam/sqlx.git", branch = "bump-libsqlite3-sys" }
+#sqlx = { git = "https://github.com/madadam/sqlx.git", branch = "bump-libsqlite3-sys" }
+#sqlx = { path = "/tmp/sqlx" }

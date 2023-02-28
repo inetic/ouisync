@@ -45,12 +45,40 @@ pub(crate) async fn receive_block(
     tx: &mut db::WriteTransaction,
     id: &BlockId,
 ) -> Result<HashSet<PublicKey>> {
+    println!("index::node::receive_block L:{} block_id:{:?}", line!(), id);
     if !LeafNode::set_present(tx, id).await? {
+        println!(
+            "index::node::receive_block L:{} block_id:{:?} block doesn't have a leaf node",
+            line!(),
+            id
+        );
+        //tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
+        println!("DUMP START");
+        let mut print = crate::debug::DebugPrinter::new();
+        println!("DUMP Roots");
+        RootNode::debug_print(tx, &mut print).await;
+        println!("DUMP Inner nodes");
+        InnerNode::debug_print(tx, &mut print).await;
+        println!("DUMP Leaf nodes");
+        LeafNode::debug_print(tx, &mut print).await;
+        crate::block::debug_print(tx, &mut print).await;
+        println!(
+            "DUMP END - RECHECK:{:?}",
+            LeafNode::set_present(tx, id).await
+        );
+        panic!();
         return Ok(HashSet::default());
     }
 
     let nodes = LeafNode::load_parent_hashes(tx, id).try_collect().await?;
 
+    println!(
+        "index::node::receive_block L:{} block_id:{:?} nodes:{:?}",
+        line!(),
+        id,
+        nodes
+    );
     let ids = update_summaries_with_stack(tx, nodes)
         .await?
         .into_iter()
@@ -161,12 +189,26 @@ async fn update_summaries_with_stack(
 ) -> Result<HashMap<PublicKey, bool>> {
     let mut statuses = HashMap::default();
 
+    println!(
+        "index::node::update_summaries_with_stack START nodes:{:?}",
+        nodes
+    );
     while let Some(hash) = nodes.pop() {
+        println!("index::node::update_summaries_with_stack 1 hash:{:?}", hash);
         match parent_kind(tx, &hash).await? {
             Some(ParentNodeKind::Root) => {
+                println!("index::node::update_summaries_with_stack 1.1 parent kind is root");
                 let complete = RootNode::update_summaries(tx, &hash).await?;
+                println!(
+                    "index::node::update_summaries_with_stack 1.2 complete:{:?}",
+                    complete
+                );
                 RootNode::load_writer_ids(tx, &hash)
                     .try_for_each(|writer_id| {
+                        println!(
+                            "index::node::update_summaries_with_stack 1.3 writer_id:{:?}",
+                            writer_id
+                        );
                         let entry = statuses.entry(writer_id).or_insert(false);
                         *entry = *entry || complete;
 
@@ -175,9 +217,15 @@ async fn update_summaries_with_stack(
                     .await?;
             }
             Some(ParentNodeKind::Inner) => {
+                println!("index::node::update_summaries_with_stack 1.1");
                 InnerNode::update_summaries(tx, &hash).await?;
+                println!("index::node::update_summaries_with_stack 1.2");
                 InnerNode::load_parent_hashes(tx, &hash)
                     .try_for_each(|parent_hash| {
+                        println!(
+                            "index::node::update_summaries_with_stack 1.3 parent_hash:{:?}",
+                            parent_hash
+                        );
                         nodes.push(parent_hash);
                         future::ready(Ok(()))
                     })

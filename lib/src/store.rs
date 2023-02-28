@@ -69,16 +69,25 @@ impl Store {
 
     /// Write a block received from a remote replica to the block store. The block must already be
     /// referenced by the index, otherwise an `BlockNotReferenced` error is returned.
-    pub(crate) async fn write_received_block(
+    pub(crate) async fn write_received_block_(
         &self,
         data: &BlockData,
         nonce: &BlockNonce,
+        name: &Option<String>,
     ) -> Result<()> {
+        println!("{:?} store::write_received_block_ L{}", name, line!());
         let mut tx = self.db().begin_write().await?;
 
+        println!("{:?} store::write_received_block_ L{}", name, line!());
         let writer_ids = match index::receive_block(&mut tx, &data.id).await {
             Ok(writer_ids) => writer_ids,
             Err(error) => {
+                println!(
+                    "{:?} store::write_received_block_ L{} error:{:?}",
+                    name,
+                    line!(),
+                    error
+                );
                 if matches!(error, Error::BlockNotReferenced) {
                     // We no longer need this block but we still need to un-track it.
                     self.block_tracker.complete(&data.id);
@@ -88,6 +97,87 @@ impl Store {
             }
         };
 
+        println!(
+            "{:?} store::write_received_block_ L{}, writer_ids:{:?}",
+            name,
+            line!(),
+            writer_ids
+        );
+        block::write(&mut tx, &data.id, &data.content, nonce).await?;
+
+        let data_id = data.id;
+        let index = self.index.clone();
+
+        // HACK: This function may run in a future that can get destroyed. If that happens during
+        // the commit phase, the committed data may or may not be written into the database. If
+        // they are, we _must_ notify the index about the fact. Therefore we do the commit in a
+        // separately spawned task so that it can still finish and we do the notification.
+        //
+        // Note that it would not be enough to execute the notification in some kind of local
+        // destructor and without spawning the task. It is because we can only do the notification
+        // _after the commit finishes_ which is not guaranteed to be the case if the local
+        // destructor is executed while the commit is still being awaited.
+        let handle: task::JoinHandle<Result<()>> = task::spawn({
+            let name = name.clone();
+            async move {
+                println!("{:?} store::write_received_block_ L{}", name, line!());
+                tx.commit().await?;
+
+                println!(
+                    "{:?} store::write_received_block_ L{} writer_ids:{:?}",
+                    name,
+                    line!(),
+                    writer_ids
+                );
+                // Notify affected branches.
+                for writer_id in writer_ids {
+                    index.notify(Event::new(Payload::BlockReceived {
+                        block_id: data_id,
+                        branch_id: writer_id,
+                    }));
+                }
+
+                println!("{:?} store::write_received_block_ L{}", name, line!());
+                Ok(())
+            }
+        });
+
+        // Unwrap is OK because nothing is `abort`ing the task.
+        handle.await.unwrap()?;
+        println!("{:?} write_received_block_ L{}", name, line!());
+
+        self.block_tracker.complete(&data.id);
+
+        Ok(())
+    }
+
+    pub(crate) async fn write_received_block(
+        &self,
+        data: &BlockData,
+        nonce: &BlockNonce,
+    ) -> Result<()> {
+        println!("write_received_block L{}", line!());
+        let mut tx = self.db().begin_write().await?;
+
+        println!("write_received_block L{}", line!());
+        let writer_ids = match index::receive_block(&mut tx, &data.id).await {
+            Ok(writer_ids) => writer_ids,
+            Err(error) => {
+                println!("write_received_block L{} error:{:?}", line!(), error);
+                if matches!(error, Error::BlockNotReferenced) {
+                    // We no longer need this block but we still need to un-track it.
+                    self.block_tracker.complete(&data.id);
+                }
+
+                return Err(error);
+            }
+        };
+
+        println!(
+            "write_received_block L{}, writer_ids:{:?}",
+            line!(),
+            writer_ids
+        );
         block::write(&mut tx, &data.id, &data.content, nonce).await?;
 
         let data_id = data.id;
@@ -103,8 +193,14 @@ impl Store {
         // _after the commit finishes_ which is not guaranteed to be the case if the local
         // destructor is executed while the commit is still being awaited.
         let handle: task::JoinHandle<Result<()>> = task::spawn(async move {
+            println!("write_received_block L{}", line!());
             tx.commit().await?;
 
+            println!(
+                "write_received_block L{} writer_ids:{:?} committed",
+                line!(),
+                writer_ids
+            );
             // Notify affected branches.
             for writer_id in writer_ids {
                 index.notify(Event::new(Payload::BlockReceived {
@@ -113,13 +209,29 @@ impl Store {
                 }));
             }
 
+            println!("write_received_block L{}", line!());
             Ok(())
         });
 
         // Unwrap is OK because nothing is `abort`ing the task.
         handle.await.unwrap()?;
+        println!("write_received_block L{}", line!());
 
         self.block_tracker.complete(&data.id);
+
+        // When we look, the bug will disappear.
+        //{
+        //    //tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        //    tokio::task::yield_now().await;
+        //    use crate::index::RootNode;
+        //    let mut conn = self.db().acquire().await?;
+
+        //    let vec: Vec<RootNode> = RootNode::load_all_latest_complete(&mut conn)
+        //        .try_collect()
+        //        .await?;
+
+        //    assert!(!vec.is_empty());
+        //}
 
         Ok(())
     }

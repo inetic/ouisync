@@ -3,6 +3,7 @@ use crate::{
     block::BlockId,
     crypto::{Digest, Hash, Hashable},
     db,
+    debug::DebugPrinter,
     error::Error,
     error::Result,
 };
@@ -150,6 +151,43 @@ impl LeafNode {
         .fetch_optional(conn)
         .await?
         .is_some())
+    }
+
+    pub async fn debug_print(conn: &mut db::Connection, printer: &mut DebugPrinter) {
+        use futures_util::StreamExt;
+
+        let mut inner_nodes = sqlx::query(
+            "SELECT
+                 parent,
+                 locator,
+                 block_id,
+                 block_presence
+             FROM snapshot_leaf_nodes
+             ORDER BY locator,block_id DESC",
+        )
+        .fetch(conn)
+        .map_ok(move |row| {
+            (
+                row.get::<Hash, usize>(0),
+                row.get::<Hash, usize>(1),
+                row.get::<BlockId, usize>(2),
+                row.get::<SingleBlockPresence, usize>(3),
+            )
+        });
+
+        while let Some(inner_node) = inner_nodes.next().await {
+            match inner_node {
+                Ok(inner_node) => {
+                    printer.debug(&format_args!(
+                        "LeafNode: parent:{:?}, locator:{:?}, block_id:{:?}, block_presence:{:?}",
+                        inner_node.0, inner_node.1, inner_node.2, inner_node.3
+                    ));
+                }
+                Err(err) => {
+                    printer.debug(&format_args!("LeafNode: error: {:?}", err));
+                }
+            }
+        }
     }
 }
 
