@@ -41,7 +41,11 @@ scoped_task = { path = "../scoped_task" }
 serde = { workspace = true }
 serde_bytes = { workspace = true }
 slab = "0.4.6"
-sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+#sqlx = { version = "0.6.2", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+#sqlx = { workspace = true, default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+sqlx = { workspace = true  }
+#sqlx = { path = "/home/peter/work/sqlx" }
+#sqlx = { path = "/home/peter/work/sqlxi", default-features = false, features = ["runtime-tokio-rustls", "sqlite"]  }
 ssdp-client = "1.0"
 thiserror = { workspace = true }
 tokio = { workspace = true }

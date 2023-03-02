@@ -44,7 +44,7 @@ impl Pool {
     async fn create(connect_options: SqliteConnectOptions) -> Result<Self, sqlx::Error> {
         let common_options = connect_options
             .journal_mode(SqliteJournalMode::Wal)
-            .synchronous(SqliteSynchronous::Normal)
+            .synchronous(SqliteSynchronous::Full)
             .pragma("recursive_triggers", "ON");
 
         let write_options = common_options.clone();
@@ -57,7 +57,9 @@ impl Pool {
 
         let read_options = common_options.read_only(true);
         let reads = SqlitePoolOptions::new()
-            .max_connections(8)
+            .min_connections(1)
+            .max_connections(1)
+            //.max_connections(8)
             .test_before_acquire(false)
             .connect_with(read_options)
             .await?;
@@ -360,6 +362,7 @@ mod tests {
         let (_a_base_dir, a_pool) = create_temp().await.unwrap();
         let (_b_base_dir, b_pool) = create_temp().await.unwrap();
 
+        println!("START");
         {
             let mut tx = a_pool.begin_write().await.unwrap();
             sqlx::query("CREATE TABLE a_table (id INTEGER PRIMARY KEY)")

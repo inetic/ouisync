@@ -22,6 +22,7 @@ tokio-util = "0.7.4"
 tracing = { version = "0.1.35" }
 tracing-subscriber = { version = "0.3.15" }
 turmoil = { git = "https://github.com/tokio-rs/turmoil" }
+sqlx = { path = "/home/peter/work/sqlx", default-features = false, features = ["runtime-tokio-rustls", "sqlite"]  }
 
 [profile.bench]
 # Enable debug info so we can profile the benches
