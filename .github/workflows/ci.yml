@@ -165,13 +165,14 @@ jobs:
 
     strategy:
       matrix:
-        name: [linux, windows]
+        #name: [linux, windows]
+        name: [windows]
         include:
-          #- name: linux
-          #  os: ubuntu-24.04
-          #  env:
-          #    OUISYNC_LIB: ../../target/debug/libouisync_service.so
-          #  cargo-dir: ~/.cargo
+          - name: linux
+            os: ubuntu-24.04
+            env:
+              OUISYNC_LIB: ../../target/debug/libouisync_service.so
+            cargo-dir: ~/.cargo
 
           - name: windows
             os: windows-latest
