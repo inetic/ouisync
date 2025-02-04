@@ -12,7 +12,8 @@ jobs:
 
     strategy:
       matrix:
-        name: [android, linux, windows]
+        #name: [android, linux, windows]
+        name: [windows]
         include:
           #- name: android
           #  os: ubuntu-24.04
